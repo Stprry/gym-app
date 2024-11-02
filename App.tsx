@@ -31,6 +31,7 @@ import {
 
 //Import components
 import { LoadingOverlay } from "./src/components/LoadingOverlay";
+import Toast from "react-native-toast-message";
 
 // Create navigators
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -158,6 +159,7 @@ export default function App() {
 		<AuthProvider>
 			<NavigationContainer>
 				<RootNavigator />
+				<Toast />
 			</NavigationContainer>
 		</AuthProvider>
 	);

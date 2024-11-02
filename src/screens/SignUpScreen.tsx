@@ -2,23 +2,74 @@ import React, { useState } from "react";
 import {
 	View,
 	Text,
-	TextInput,
 	TouchableOpacity,
 	StyleSheet,
-	Alert,
 	KeyboardAvoidingView,
 	Platform,
 	ScrollView
 } from "react-native";
+import Toast, {
+	BaseToast,
+	ErrorToast,
+	BaseToastProps
+} from "react-native-toast-message";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { AuthStackParamList } from "../types/navigation";
 import { supabase } from "../lib/supabase";
 import { LoadingOverlay } from "../components/LoadingOverlay";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
-import { usernameTaken } from "../constants/errorCodes";
+import { usernameTaken, SupabaseErrorCode } from "../constants/errorCodes";
 import { FormInput } from "../components/FormInput";
 
 type Props = NativeStackScreenProps<AuthStackParamList, "SignUp">;
+
+// Define custom toast styles with proper typing for props
+const toastConfig = {
+	success: (props: BaseToastProps) => (
+		<BaseToast
+			{...props}
+			style={{ borderLeftColor: "#4CAF50", height: 80, paddingHorizontal: 20 }}
+			text1Style={{
+				fontSize: 18,
+				fontWeight: "bold",
+				height: "auto",
+				width: "auto"
+			}}
+			text2Style={{
+				fontSize: 16,
+				color: "#4CAF50",
+				height: "auto",
+				width: "auto"
+			}}
+		/>
+	),
+	error: (props: BaseToastProps) => (
+		<ErrorToast
+			{...props}
+			style={{
+				borderLeftColor: "#FF5252",
+				height: 80,
+				paddingHorizontal: 20,
+				flex: 1,
+				flexDirection: "row",
+				justifyContent: "space-between",
+				alignItems: "center"
+			}}
+			text1Style={{
+				fontSize: 18,
+				fontWeight: "bold",
+				height: "auto",
+				width: "auto"
+			}}
+			text2Style={{
+				fontSize: 16,
+				color: "#FF5252",
+				height: "auto",
+				width: "auto"
+			}}
+		/>
+	)
+};
 
 export default function SignUpScreen({ navigation }: Props) {
 	const [submitting, setSubmitting] = useState(false);
@@ -55,17 +106,27 @@ export default function SignUpScreen({ navigation }: Props) {
 		return null;
 	};
 
+	const showToast = (
+		type: "success" | "error",
+		text1: string,
+		text2?: string,
+		onHideCallback?: () => void
+	) => {
+		Toast.show({
+			type,
+			text1,
+			text2,
+			visibilityTime: 15000, // 15 seconds for readability
+			onHide: onHideCallback
+		});
+	};
+
 	const handleSignUp = async () => {
 		if (submitting) return;
 
-		// Validation
-		if (!formData.email || !formData.password || !formData.username) {
-			Alert.alert("Error", "Please fill in all required fields");
-			return;
-		}
-
-		if (formData.password !== formData.confirmPassword) {
-			Alert.alert("Error", "Passwords do not match");
+		const validationError = validateForm();
+		if (validationError) {
+			showToast("error", "Validation Error", validationError);
 			return;
 		}
 
@@ -86,29 +147,31 @@ export default function SignUpScreen({ navigation }: Props) {
 					}
 				}
 			});
+
 			if (signUpError) {
-				// Handle specific auth errors
-				if (signUpError.message === "User already registered") {
-					Alert.alert(
+				const errorCode = (signUpError as any).code as SupabaseErrorCode;
+				if (errorCode === "user_already_exists") {
+					showToast(
+						"error",
 						"Account Exists",
-						"An account with this email already exists. Would you like to sign in instead?",
-						[
-							{
-								text: "Cancel",
-								style: "cancel"
-							},
-							{
-								text: "Sign In",
-								onPress: () => navigation.navigate("SignIn")
-							}
-						]
+						ERROR_MESSAGES[errorCode],
+						() => {
+							navigation.navigate("SignIn", { email: formData.email.trim() });
+						}
 					);
 					return;
 				}
-				throw signUpError;
+				showToast(
+					"error",
+					"Sign Up Error",
+					ERROR_MESSAGES[errorCode] || ERROR_MESSAGES.default
+				);
+				return;
 			}
 
-			if (!authUser) throw new Error("No user returned from sign up");
+			if (!authUser) {
+				throw new Error("No user returned from sign up");
+			}
 
 			const { error: profileError } = await supabase.from("users").insert([
 				{
@@ -123,10 +186,9 @@ export default function SignUpScreen({ navigation }: Props) {
 			]);
 
 			if (profileError) {
-				// Handle specific profile creation errors
-				if (profileError.code === usernameTaken) {
-					// Unique constraint error
-					Alert.alert(
+				if (profileError.code === "23505") {
+					showToast(
+						"error",
 						"Username Taken",
 						"This username is already taken. Please choose another one."
 					);
@@ -135,23 +197,23 @@ export default function SignUpScreen({ navigation }: Props) {
 				throw profileError;
 			}
 
-			Alert.alert("Success", "Account created successfully!", [
-				{ text: "OK", onPress: () => navigation.navigate("SignIn") }
-			]);
+			// Show success toast and navigate to SignIn only after toast has been displayed
+			showToast(
+				"success",
+				"Success",
+				"Account created successfully! Please check your email to verify your account.",
+				() => {
+					navigation.navigate("SignIn", { email: formData.email.trim() });
+				}
+			);
 		} catch (error) {
-			console.error("SignUp error:", error);
-			console.error("SignUp error:", error);
-
-			// Handle known error types
+			let errorMessage = ERROR_MESSAGES.default;
 			if (error instanceof Error) {
-				const errorCode = (error as any).code;
-				const errorMessage =
-					ERROR_MESSAGES[errorCode] || ERROR_MESSAGES.default;
-
-				Alert.alert("Error", errorMessage);
-			} else {
-				Alert.alert("Error", ERROR_MESSAGES.default);
+				const errorResponse = (error as any).response?.data;
+				errorMessage =
+					errorResponse?.message || error.message || ERROR_MESSAGES.default;
 			}
+			showToast("error", "Error", errorMessage);
 		} finally {
 			setSubmitting(false);
 		}
@@ -163,7 +225,6 @@ export default function SignUpScreen({ navigation }: Props) {
 			style={styles.container}
 		>
 			<LoadingOverlay visible={submitting} message="Creating your account..." />
-
 			<ScrollView
 				contentContainerStyle={styles.scrollContainer}
 				keyboardShouldPersistTaps="handled"
@@ -189,7 +250,6 @@ export default function SignUpScreen({ navigation }: Props) {
 							}
 							editable={!submitting}
 						/>
-
 						<FormInput
 							label="Username"
 							required
@@ -205,7 +265,6 @@ export default function SignUpScreen({ navigation }: Props) {
 							}
 							editable={!submitting}
 						/>
-
 						<View style={styles.row}>
 							<FormInput
 								label="First Name"
@@ -216,7 +275,6 @@ export default function SignUpScreen({ navigation }: Props) {
 								}
 								editable={!submitting}
 							/>
-
 							<FormInput
 								label="Last Name"
 								containerStyle={styles.halfWidth}
@@ -227,7 +285,6 @@ export default function SignUpScreen({ navigation }: Props) {
 								editable={!submitting}
 							/>
 						</View>
-
 						<FormInput
 							label="Password"
 							required
@@ -244,7 +301,6 @@ export default function SignUpScreen({ navigation }: Props) {
 							}
 							editable={!submitting}
 						/>
-
 						<FormInput
 							label="Confirm Password"
 							required
@@ -262,7 +318,6 @@ export default function SignUpScreen({ navigation }: Props) {
 							}
 							editable={!submitting}
 						/>
-
 						<TouchableOpacity
 							style={[styles.button, submitting && styles.buttonDisabled]}
 							onPress={handleSignUp}
@@ -270,7 +325,6 @@ export default function SignUpScreen({ navigation }: Props) {
 						>
 							<Text style={styles.buttonText}>Create Account</Text>
 						</TouchableOpacity>
-
 						<TouchableOpacity
 							onPress={() => navigation.navigate("SignIn")}
 							style={styles.linkButton}
@@ -284,9 +338,11 @@ export default function SignUpScreen({ navigation }: Props) {
 					</View>
 				</View>
 			</ScrollView>
+			<Toast config={toastConfig} />
 		</KeyboardAvoidingView>
 	);
 }
+
 const styles = StyleSheet.create({
 	container: {
 		flex: 1,
