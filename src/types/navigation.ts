@@ -12,7 +12,7 @@ export type RootStackParamList = {
 };
 
 export type AuthStackParamList = {
-	SignIn: undefined;
+	SignIn: { email?: string } | undefined;
 	SignUp: undefined;
 	ForgotPassword: undefined;
 };

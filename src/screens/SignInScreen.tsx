@@ -3,77 +3,82 @@ import React, { useState } from "react";
 import {
 	View,
 	Text,
-	TextInput,
-	TouchableOpacity,
 	StyleSheet,
-	ActivityIndicator,
+	TouchableOpacity,
 	Alert,
 	KeyboardAvoidingView,
 	Platform,
 	ScrollView
 } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { supabase } from "../lib/supabase";
 import { AuthStackParamList } from "../types/navigation";
+import { supabase } from "../lib/supabase";
+import { FormInput } from "../components/FormInput";
+import { LoadingOverlay } from "../components/LoadingOverlay";
 
 type Props = NativeStackScreenProps<AuthStackParamList, "SignIn">;
 
-export default function SignInScreen({ navigation }: Props) {
-	const [email, setEmail] = useState("");
-	const [password, setPassword] = useState("");
-	const [loading, setLoading] = useState(false);
+type SignInError =
+	| "invalid_credentials"
+	| "invalid_email"
+	| "email_not_confirmed"
+	| string;
+
+const ERROR_MESSAGES: Record<SignInError, string> = {
+	invalid_credentials: "Invalid email or password",
+	invalid_email: "Please enter a valid email address",
+	email_not_confirmed: "Please confirm your email address before signing in",
+	default: "An error occurred while signing in"
+};
+
+export default function SignInScreen({ navigation, route }: Props) {
+	const [submitting, setSubmitting] = useState(false);
+	const [formData, setFormData] = useState({
+		email: route.params?.email || "",
+		password: ""
+	});
 
 	const handleSignIn = async () => {
-		if (loading) return;
+		if (submitting) return;
 
-		// Basic validation
-		if (!email || !password) {
+		// Validation
+		if (!formData.email || !formData.password) {
 			Alert.alert("Error", "Please fill in all fields");
 			return;
 		}
 
 		try {
-			setLoading(true);
+			setSubmitting(true);
 
 			const { data, error } = await supabase.auth.signInWithPassword({
-				email: email.trim(),
-				password: password
+				email: formData.email.trim(),
+				password: formData.password
 			});
 
 			if (error) {
-				throw error;
+				const errorCode = (error as any).code as SignInError;
+				Alert.alert(
+					"Sign In Error",
+					ERROR_MESSAGES[errorCode] || ERROR_MESSAGES.default
+				);
+				return;
 			}
 
-			// Check if user profile exists in users table
-			const { data: profile, error: profileError } = await supabase
-				.from("users")
-				.select("*")
-				.eq("id", data.user?.id)
-				.single();
-
-			if (profileError) {
-				// If profile doesn't exist, create one
-				const { error: insertError } = await supabase.from("users").insert([
-					{
-						id: data.user?.id,
-						email: email.trim(),
-						username: email.split("@")[0], // Default username from email
-						role: "client", // Default role
-						is_active: true
-					}
-				]);
-
-				if (insertError) throw insertError;
-			}
+			// Success is handled by the auth listener in AuthContext
 		} catch (error) {
-			if (error instanceof Error) {
-				Alert.alert("Error", error.message);
-			} else {
-				Alert.alert("Error", "An unexpected error occurred");
-			}
+			console.error("SignIn error:", error);
+			Alert.alert(
+				"Error",
+				error instanceof Error ? error.message : ERROR_MESSAGES.default
+			);
 		} finally {
-			setLoading(false);
+			setSubmitting(false);
 		}
+	};
+
+	const handleForgotPassword = () => {
+		// Navigation to forgot password screen (if implemented)
+		// navigation.navigate('ForgotPassword');
 	};
 
 	return (
@@ -81,6 +86,8 @@ export default function SignInScreen({ navigation }: Props) {
 			behavior={Platform.OS === "ios" ? "padding" : "height"}
 			style={styles.container}
 		>
+			<LoadingOverlay visible={submitting} message="Signing in..." />
+
 			<ScrollView
 				contentContainerStyle={styles.scrollContainer}
 				keyboardShouldPersistTaps="handled"
@@ -90,57 +97,53 @@ export default function SignInScreen({ navigation }: Props) {
 					<Text style={styles.subtitle}>Sign in to continue</Text>
 
 					<View style={styles.form}>
-						<View style={styles.inputContainer}>
-							<Text style={styles.label}>Email</Text>
-							<TextInput
-								style={styles.input}
-								placeholder="Enter your email"
-								value={email}
-								onChangeText={setEmail}
-								autoCapitalize="none"
-								keyboardType="email-address"
-								autoComplete="email"
-								editable={!loading}
-							/>
-						</View>
+						<FormInput
+							label="Email"
+							required
+							value={formData.email}
+							onChangeText={(text) =>
+								setFormData((prev) => ({ ...prev, email: text }))
+							}
+							autoCapitalize="none"
+							keyboardType="email-address"
+							editable={!submitting}
+							autoComplete="email"
+							textContentType="emailAddress"
+						/>
 
-						<View style={styles.inputContainer}>
-							<Text style={styles.label}>Password</Text>
-							<TextInput
-								style={styles.input}
-								placeholder="Enter your password"
-								value={password}
-								onChangeText={setPassword}
-								secureTextEntry
-								autoCapitalize="none"
-								autoComplete="password"
-								editable={!loading}
-							/>
-						</View>
+						<FormInput
+							label="Password"
+							required
+							value={formData.password}
+							onChangeText={(text) =>
+								setFormData((prev) => ({ ...prev, password: text }))
+							}
+							secureTextEntry
+							autoCapitalize="none"
+							editable={!submitting}
+							autoComplete="password"
+							textContentType="password"
+						/>
 
 						<TouchableOpacity
-							onPress={() => navigation.navigate("ForgotPassword")}
-							style={styles.forgotPassword}
+							onPress={handleForgotPassword}
+							style={styles.forgotPasswordButton}
 						>
 							<Text style={styles.forgotPasswordText}>Forgot Password?</Text>
 						</TouchableOpacity>
 
 						<TouchableOpacity
-							style={[styles.button, loading && styles.buttonDisabled]}
+							style={[styles.button, submitting && styles.buttonDisabled]}
 							onPress={handleSignIn}
-							disabled={loading}
+							disabled={submitting}
 						>
-							{loading ? (
-								<ActivityIndicator color="#FFFFFF" />
-							) : (
-								<Text style={styles.buttonText}>Sign In</Text>
-							)}
+							<Text style={styles.buttonText}>Sign In</Text>
 						</TouchableOpacity>
 
 						<TouchableOpacity
 							onPress={() => navigation.navigate("SignUp")}
 							style={styles.linkButton}
-							disabled={loading}
+							disabled={submitting}
 						>
 							<Text style={styles.linkText}>
 								Don't have an account?{" "}
@@ -164,8 +167,7 @@ const styles = StyleSheet.create({
 	},
 	content: {
 		flex: 1,
-		padding: 24,
-		justifyContent: "center"
+		padding: 24
 	},
 	title: {
 		fontSize: 32,
@@ -182,23 +184,7 @@ const styles = StyleSheet.create({
 	form: {
 		gap: 16
 	},
-	inputContainer: {
-		gap: 8
-	},
-	label: {
-		fontSize: 14,
-		fontWeight: "500",
-		color: "#333"
-	},
-	input: {
-		borderWidth: 1,
-		borderColor: "#ddd",
-		padding: 16,
-		borderRadius: 12,
-		fontSize: 16,
-		backgroundColor: "#fafafa"
-	},
-	forgotPassword: {
+	forgotPasswordButton: {
 		alignSelf: "flex-end"
 	},
 	forgotPasswordText: {

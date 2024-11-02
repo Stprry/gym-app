@@ -5,7 +5,6 @@ import {
 	TextInput,
 	TouchableOpacity,
 	StyleSheet,
-	ActivityIndicator,
 	Alert,
 	KeyboardAvoidingView,
 	Platform,
@@ -13,13 +12,16 @@ import {
 } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { AuthStackParamList } from "../types/navigation";
-import { useAuth } from "../hooks/useAuth";
+import { supabase } from "../lib/supabase";
+import { LoadingOverlay } from "../components/LoadingOverlay";
+import { ERROR_MESSAGES } from "../constants/errorMessages";
+import { usernameTaken } from "../constants/errorCodes";
+import { FormInput } from "../components/FormInput";
 
 type Props = NativeStackScreenProps<AuthStackParamList, "SignUp">;
 
 export default function SignUpScreen({ navigation }: Props) {
-	const { signUp } = useAuth();
-	const [loading, setLoading] = useState(false);
+	const [submitting, setSubmitting] = useState(false);
 	const [formData, setFormData] = useState({
 		email: "",
 		password: "",
@@ -29,8 +31,32 @@ export default function SignUpScreen({ navigation }: Props) {
 		lastName: ""
 	});
 
+	const validateForm = (): string | null => {
+		if (!formData.email || !formData.password || !formData.username) {
+			return "Please fill in all required fields";
+		}
+
+		if (!formData.email.includes("@") || !formData.email.includes(".")) {
+			return "Please enter a valid email address";
+		}
+
+		if (formData.password.length < 6) {
+			return "Password must be at least 6 characters long";
+		}
+
+		if (formData.password !== formData.confirmPassword) {
+			return "Passwords do not match";
+		}
+
+		if (formData.username.length < 3) {
+			return "Username must be at least 3 characters long";
+		}
+
+		return null;
+	};
+
 	const handleSignUp = async () => {
-		if (loading) return;
+		if (submitting) return;
 
 		// Validation
 		if (!formData.email || !formData.password || !formData.username) {
@@ -43,23 +69,91 @@ export default function SignUpScreen({ navigation }: Props) {
 			return;
 		}
 
-		if (formData.password.length < 6) {
-			Alert.alert("Error", "Password must be at least 6 characters");
-			return;
-		}
-
 		try {
-			setLoading(true);
-			await signUp(formData.email, formData.password, {
-				username: formData.username,
-				first_name: formData.firstName,
-				last_name: formData.lastName,
-				role: "client"
+			setSubmitting(true);
+
+			const {
+				data: { user: authUser },
+				error: signUpError
+			} = await supabase.auth.signUp({
+				email: formData.email.trim(),
+				password: formData.password,
+				options: {
+					data: {
+						username: formData.username,
+						first_name: formData.firstName,
+						last_name: formData.lastName
+					}
+				}
 			});
+			if (signUpError) {
+				// Handle specific auth errors
+				if (signUpError.message === "User already registered") {
+					Alert.alert(
+						"Account Exists",
+						"An account with this email already exists. Would you like to sign in instead?",
+						[
+							{
+								text: "Cancel",
+								style: "cancel"
+							},
+							{
+								text: "Sign In",
+								onPress: () => navigation.navigate("SignIn")
+							}
+						]
+					);
+					return;
+				}
+				throw signUpError;
+			}
+
+			if (!authUser) throw new Error("No user returned from sign up");
+
+			const { error: profileError } = await supabase.from("users").insert([
+				{
+					id: authUser.id,
+					email: formData.email.trim(),
+					username: formData.username,
+					first_name: formData.firstName,
+					last_name: formData.lastName,
+					role: "client",
+					is_active: true
+				}
+			]);
+
+			if (profileError) {
+				// Handle specific profile creation errors
+				if (profileError.code === usernameTaken) {
+					// Unique constraint error
+					Alert.alert(
+						"Username Taken",
+						"This username is already taken. Please choose another one."
+					);
+					return;
+				}
+				throw profileError;
+			}
+
+			Alert.alert("Success", "Account created successfully!", [
+				{ text: "OK", onPress: () => navigation.navigate("SignIn") }
+			]);
 		} catch (error) {
-			// Error is handled in auth context
+			console.error("SignUp error:", error);
+			console.error("SignUp error:", error);
+
+			// Handle known error types
+			if (error instanceof Error) {
+				const errorCode = (error as any).code;
+				const errorMessage =
+					ERROR_MESSAGES[errorCode] || ERROR_MESSAGES.default;
+
+				Alert.alert("Error", errorMessage);
+			} else {
+				Alert.alert("Error", ERROR_MESSAGES.default);
+			}
 		} finally {
-			setLoading(false);
+			setSubmitting(false);
 		}
 	};
 
@@ -68,6 +162,8 @@ export default function SignUpScreen({ navigation }: Props) {
 			behavior={Platform.OS === "ios" ? "padding" : "height"}
 			style={styles.container}
 		>
+			<LoadingOverlay visible={submitting} message="Creating your account..." />
+
 			<ScrollView
 				contentContainerStyle={styles.scrollContainer}
 				keyboardShouldPersistTaps="handled"
@@ -77,109 +173,108 @@ export default function SignUpScreen({ navigation }: Props) {
 					<Text style={styles.subtitle}>Start your fitness journey</Text>
 
 					<View style={styles.form}>
-						<View style={styles.inputContainer}>
-							<Text style={styles.label}>Email *</Text>
-							<TextInput
-								style={styles.input}
-								placeholder="Enter your email"
-								value={formData.email}
-								onChangeText={(text) =>
-									setFormData((prev) => ({ ...prev, email: text }))
-								}
-								autoCapitalize="none"
-								keyboardType="email-address"
-								editable={!loading}
-							/>
-						</View>
+						<FormInput
+							label="Email"
+							required
+							value={formData.email}
+							onChangeText={(text) =>
+								setFormData((prev) => ({ ...prev, email: text }))
+							}
+							autoCapitalize="none"
+							keyboardType="email-address"
+							error={
+								formData.email && !formData.email.includes("@")
+									? "Please enter a valid email address"
+									: undefined
+							}
+							editable={!submitting}
+						/>
 
-						<View style={styles.inputContainer}>
-							<Text style={styles.label}>Username *</Text>
-							<TextInput
-								style={styles.input}
-								placeholder="Choose a username"
-								value={formData.username}
-								onChangeText={(text) =>
-									setFormData((prev) => ({ ...prev, username: text }))
-								}
-								autoCapitalize="none"
-								editable={!loading}
-							/>
-						</View>
+						<FormInput
+							label="Username"
+							required
+							value={formData.username}
+							onChangeText={(text) =>
+								setFormData((prev) => ({ ...prev, username: text }))
+							}
+							autoCapitalize="none"
+							error={
+								formData.username && formData.username.length < 3
+									? "Username must be at least 3 characters"
+									: undefined
+							}
+							editable={!submitting}
+						/>
 
 						<View style={styles.row}>
-							<View style={[styles.inputContainer, styles.halfWidth]}>
-								<Text style={styles.label}>First Name</Text>
-								<TextInput
-									style={styles.input}
-									placeholder="First name"
-									value={formData.firstName}
-									onChangeText={(text) =>
-										setFormData((prev) => ({ ...prev, firstName: text }))
-									}
-									editable={!loading}
-								/>
-							</View>
-
-							<View style={[styles.inputContainer, styles.halfWidth]}>
-								<Text style={styles.label}>Last Name</Text>
-								<TextInput
-									style={styles.input}
-									placeholder="Last name"
-									value={formData.lastName}
-									onChangeText={(text) =>
-										setFormData((prev) => ({ ...prev, lastName: text }))
-									}
-									editable={!loading}
-								/>
-							</View>
-						</View>
-
-						<View style={styles.inputContainer}>
-							<Text style={styles.label}>Password *</Text>
-							<TextInput
-								style={styles.input}
-								placeholder="Create a password"
-								value={formData.password}
+							<FormInput
+								label="First Name"
+								containerStyle={styles.halfWidth}
+								value={formData.firstName}
 								onChangeText={(text) =>
-									setFormData((prev) => ({ ...prev, password: text }))
+									setFormData((prev) => ({ ...prev, firstName: text }))
 								}
-								secureTextEntry
-								autoCapitalize="none"
-								editable={!loading}
+								editable={!submitting}
+							/>
+
+							<FormInput
+								label="Last Name"
+								containerStyle={styles.halfWidth}
+								value={formData.lastName}
+								onChangeText={(text) =>
+									setFormData((prev) => ({ ...prev, lastName: text }))
+								}
+								editable={!submitting}
 							/>
 						</View>
 
-						<View style={styles.inputContainer}>
-							<Text style={styles.label}>Confirm Password *</Text>
-							<TextInput
-								style={styles.input}
-								placeholder="Confirm your password"
-								value={formData.confirmPassword}
-								onChangeText={(text) =>
-									setFormData((prev) => ({ ...prev, confirmPassword: text }))
-								}
-								secureTextEntry
-								autoCapitalize="none"
-								editable={!loading}
-							/>
-						</View>
+						<FormInput
+							label="Password"
+							required
+							value={formData.password}
+							onChangeText={(text) =>
+								setFormData((prev) => ({ ...prev, password: text }))
+							}
+							secureTextEntry
+							autoCapitalize="none"
+							error={
+								formData.password && formData.password.length < 6
+									? "Password must be at least 6 characters"
+									: undefined
+							}
+							editable={!submitting}
+						/>
+
+						<FormInput
+							label="Confirm Password"
+							required
+							value={formData.confirmPassword}
+							onChangeText={(text) =>
+								setFormData((prev) => ({ ...prev, confirmPassword: text }))
+							}
+							secureTextEntry
+							autoCapitalize="none"
+							error={
+								formData.confirmPassword &&
+								formData.password !== formData.confirmPassword
+									? "Passwords do not match"
+									: undefined
+							}
+							editable={!submitting}
+						/>
 
 						<TouchableOpacity
-							style={[styles.button, loading && styles.buttonDisabled]}
+							style={[styles.button, submitting && styles.buttonDisabled]}
 							onPress={handleSignUp}
-							disabled={loading}
+							disabled={submitting}
 						>
-							{loading ? (
-								<ActivityIndicator color="#FFFFFF" />
-							) : (
-								<Text style={styles.buttonText}>Create Account</Text>
-							)}
+							<Text style={styles.buttonText}>Create Account</Text>
 						</TouchableOpacity>
 
 						<TouchableOpacity
 							onPress={() => navigation.navigate("SignIn")}
 							style={styles.linkButton}
-							disabled={loading}
+							disabled={submitting}
 						>
 							<Text style={styles.linkText}>
 								Already have an account?{" "}
@@ -192,7 +287,6 @@ export default function SignUpScreen({ navigation }: Props) {
 		</KeyboardAvoidingView>
 	);
 }
-
 const styles = StyleSheet.create({
 	container: {
 		flex: 1,
@@ -226,22 +320,6 @@ const styles = StyleSheet.create({
 	},
 	halfWidth: {
 		flex: 1
-	},
-	inputContainer: {
-		gap: 8
-	},
-	label: {
-		fontSize: 14,
-		fontWeight: "500",
-		color: "#333"
-	},
-	input: {
-		borderWidth: 1,
-		borderColor: "#ddd",
-		padding: 16,
-		borderRadius: 12,
-		fontSize: 16,
-		backgroundColor: "#fafafa"
 	},
 	button: {
 		backgroundColor: "#000",

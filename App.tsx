@@ -29,6 +29,9 @@ import {
 	MainStackParamList
 } from "./src/types/navigation";
 
+//Import components
+import { LoadingOverlay } from "./src/components/LoadingOverlay";
+
 // Create navigators
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
@@ -128,14 +131,13 @@ function MainNavigator() {
 }
 
 // Root navigator with auth state handling
+
 function RootNavigator() {
 	const { user, loading } = useAuth();
 
 	if (loading) {
 		return (
-			<View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-				<ActivityIndicator size="large" />
-			</View>
+			<LoadingOverlay visible={true} message="Checking authentication..." />
 		);
 	}
 
