@@ -367,7 +367,7 @@ const styles = StyleSheet.create({
 		position: "relative"
 	},
 	inputContainer: {
-		pointerEvents: "none" as const,
+		...(Platform.OS !== "web" ? { pointerEvents: "none" as const } : {}),
 		width: "100%"
 	},
 	disabledInput: {
