@@ -1,11 +1,12 @@
 // src/hooks/useAuth.ts
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
-import { User } from "../types/auth";
+import { AuthContextType, User } from "../types/auth";
 
-export function useAuth() {
+export function useAuth(): AuthContextType {
 	const [user, setUser] = useState<User | null>(null);
 	const [loading, setLoading] = useState(true);
+	const [initialized, setInitialized] = useState(false);
 
 	async function fetchUserProfile(userId: string) {
 		try {
@@ -14,12 +15,10 @@ export function useAuth() {
 				.select("*")
 				.eq("id", userId)
 				.single();
-
 			if (error) {
 				console.error("Profile fetch error:", error);
 				throw error;
 			}
-
 			setUser(data);
 		} catch (error) {
 			console.error("Error fetching user profile:", error);
@@ -29,9 +28,38 @@ export function useAuth() {
 		}
 	}
 
+	async function signOut() {
+		try {
+			const { error } = await supabase.auth.signOut();
+			if (error) throw error;
+			setUser(null);
+		} catch (error) {
+			console.error("Error signing out:", error);
+			throw error;
+		}
+	}
+
+	async function updateUser(updates: Partial<User>) {
+		try {
+			if (!user?.id) throw new Error("No user logged in");
+
+			const { data, error } = await supabase
+				.from("users")
+				.update(updates)
+				.eq("id", user.id)
+				.select()
+				.single();
+
+			if (error) throw error;
+			setUser(data);
+		} catch (error) {
+			console.error("Error updating user:", error);
+			throw error;
+		}
+	}
+
 	useEffect(() => {
 		let mounted = true;
-
 		// Check current session
 		supabase.auth.getSession().then(({ data: { session } }) => {
 			if (session?.user && mounted) {
@@ -40,6 +68,7 @@ export function useAuth() {
 				setLoading(false);
 				setUser(null);
 			}
+			setInitialized(true);
 		});
 
 		// Listen for auth changes
@@ -60,5 +89,11 @@ export function useAuth() {
 		};
 	}, []);
 
-	return { user, loading };
+	return {
+		user,
+		loading,
+		initialized,
+		signOut,
+		updateUser
+	};
 }

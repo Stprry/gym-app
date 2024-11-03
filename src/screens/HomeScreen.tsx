@@ -7,7 +7,8 @@ import {
 	TouchableOpacity,
 	RefreshControl,
 	ActivityIndicator,
-	Platform
+	Platform,
+	ScrollView
 } from "react-native";
 import { CompositeScreenProps } from "@react-navigation/native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -17,6 +18,7 @@ import { Plus, Clock, Dumbbell } from "lucide-react-native";
 import { useWorkouts } from "../hooks/useWorkouts";
 import { useAuth } from "../hooks/useAuth";
 import { Database } from "../types/supabase";
+import { LoadingOverlay } from "@/components/LoadingOverlay";
 
 type Props = CompositeScreenProps<
 	BottomTabScreenProps<MainTabParamList, "Home">,
@@ -65,6 +67,32 @@ export default function HomeScreen({ navigation }: Props) {
 		await refetch();
 		setRefreshing(false);
 	}, [refetch]);
+
+	if (loading) {
+		return <LoadingOverlay visible={true} message="Loading workouts..." />;
+	}
+
+	if (workouts.length === 0) {
+		return (
+			<View style={styles.container}>
+				<View style={styles.emptyContainer}>
+					<Dumbbell size={64} color="#666" style={styles.emptyIcon} />
+					<Text style={styles.emptyTitle}>No Workouts Yet</Text>
+					<Text style={styles.emptyDescription}>
+						Start your fitness journey by creating your first workout plan.
+						Track your exercises, sets, and progress all in one place.
+					</Text>
+					<TouchableOpacity
+						style={styles.createButton}
+						onPress={handleAddWorkout}
+					>
+						<Plus size={20} color="#fff" style={styles.createButtonIcon} />
+						<Text style={styles.createButtonText}>Create Workout</Text>
+					</TouchableOpacity>
+				</View>
+			</View>
+		);
+	}
 
 	if (error) {
 		return (
@@ -128,6 +156,45 @@ const styles = StyleSheet.create({
 	container: {
 		flex: 1,
 		backgroundColor: "#f5f5f5"
+	},
+	emptyContainer: {
+		flex: 1,
+		padding: 24,
+		alignItems: "center",
+		justifyContent: "center",
+		marginTop: 60
+	},
+	emptyIcon: {
+		marginBottom: 24
+	},
+	emptyTitle: {
+		fontSize: 24,
+		fontWeight: "bold",
+		marginBottom: 12,
+		textAlign: "center"
+	},
+	emptyDescription: {
+		fontSize: 16,
+		color: "#666",
+		textAlign: "center",
+		marginBottom: 32,
+		lineHeight: 24
+	},
+	createButton: {
+		backgroundColor: "#000",
+		flexDirection: "row",
+		alignItems: "center",
+		padding: 16,
+		borderRadius: 12,
+		marginTop: 8
+	},
+	createButtonIcon: {
+		marginRight: 8
+	},
+	createButtonText: {
+		color: "#fff",
+		fontSize: 16,
+		fontWeight: "600"
 	},
 	header: {
 		flexDirection: "row",
@@ -213,33 +280,6 @@ const styles = StyleSheet.create({
 		borderRadius: 8
 	},
 	retryButtonText: {
-		color: "#fff",
-		fontSize: 16,
-		fontWeight: "500"
-	},
-	emptyContainer: {
-		alignItems: "center",
-		justifyContent: "center",
-		padding: 24
-	},
-	emptyTitle: {
-		fontSize: 18,
-		fontWeight: "600",
-		marginBottom: 8
-	},
-	emptyDescription: {
-		fontSize: 14,
-		color: "#666",
-		marginBottom: 16,
-		textAlign: "center"
-	},
-	createButton: {
-		backgroundColor: "#000",
-		paddingHorizontal: 24,
-		paddingVertical: 12,
-		borderRadius: 8
-	},
-	createButtonText: {
 		color: "#fff",
 		fontSize: 16,
 		fontWeight: "500"

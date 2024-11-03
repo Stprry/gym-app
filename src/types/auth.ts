@@ -8,13 +8,10 @@ export interface AuthState {
 	loading: boolean;
 }
 
-export interface AuthContextType extends AuthState {
-	signUp: (
-		email: string,
-		password: string,
-		userData: Partial<User>
-	) => Promise<void>;
-	signIn: (email: string, password: string) => Promise<void>;
-	signOut: () => Promise<void>;
+export interface AuthContextType {
+	user: User | null;
+	loading: boolean;
+	initialized: boolean;
 	updateUser: (updates: Partial<User>) => Promise<void>;
+	signOut: () => Promise<void>;
 }

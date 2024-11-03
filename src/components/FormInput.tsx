@@ -6,7 +6,8 @@ import {
 	TextInput,
 	StyleSheet,
 	TextInputProps,
-	ViewStyle
+	ViewStyle,
+	StyleProp
 } from "react-native";
 
 interface FormInputProps extends TextInputProps {
@@ -14,6 +15,8 @@ interface FormInputProps extends TextInputProps {
 	error?: string;
 	containerStyle?: ViewStyle;
 	required?: boolean;
+	style?: StyleProp<ViewStyle>;
+	leftIcon?: React.ReactNode;
 }
 
 export const FormInput: React.FC<FormInputProps> = ({

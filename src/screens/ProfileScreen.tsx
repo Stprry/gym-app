@@ -1,3 +1,4 @@
+// src/screens/ProfileScreen.tsx
 import React, { useState, useEffect } from "react";
 import {
 	View,
@@ -6,136 +7,65 @@ import {
 	TouchableOpacity,
 	ScrollView,
 	TextInput,
-	Alert,
-	ActivityIndicator,
-	Image,
-	Platform
+	Alert
 } from "react-native";
-import { User, LogOut, Edit2, Camera } from "lucide-react-native";
-import * as ImagePicker from "expo-image-picker";
-import { decode } from "base64-arraybuffer";
 import { useAuth } from "../hooks/useAuth";
 import { supabase } from "../lib/supabase";
-import { Database } from "../types/supabase";
-
-type UserProfile = Database["public"]["Tables"]["users"]["Row"];
-
-type FormData = {
-	username: string;
-	first_name: string;
-	last_name: string;
-	height: string;
-	weight: string;
-	goals: string;
-	experience_level: string;
-};
+import { User, Edit2, Save, LogOut, Lock } from "lucide-react-native";
+import { LoadingOverlay } from "../components/LoadingOverlay";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import { Image } from "react-native"; // Use React Native's Image component
+import { ProfileFormData, ExperienceLevel } from "../types/formdata";
+import { AuthContextType } from "../types/auth";
+import { FormInput } from "@/components/FormInput";
 
 export default function ProfileScreen() {
-	const { user, signOut, updateUser } = useAuth();
+	const { user, updateUser, signOut } = useAuth();
 	const [editing, setEditing] = useState(false);
 	const [loading, setLoading] = useState(false);
-	const [uploadingImage, setUploadingImage] = useState(false);
-	const [formData, setFormData] = useState<FormData>({
-		username: "",
-		first_name: "",
-		last_name: "",
-		height: "",
-		weight: "",
-		goals: "",
-		experience_level: ""
+	const [formData, setFormData] = useState<ProfileFormData>({
+		first_name: user?.first_name || "",
+		last_name: user?.last_name || "",
+		height: user?.height?.toString() || "",
+		weight: user?.weight?.toString() || "",
+		date_of_birth: user?.date_of_birth || new Date(),
+		goals: user?.goals || "",
+		experience_level: (user?.experience_level as ExperienceLevel) || "beginner"
 	});
 
 	useEffect(() => {
 		if (user) {
 			setFormData({
-				username: user.username || "",
 				first_name: user.first_name || "",
 				last_name: user.last_name || "",
 				height: user.height?.toString() || "",
 				weight: user.weight?.toString() || "",
+				date_of_birth: user.date_of_birth || new Date(),
 				goals: user.goals || "",
-				experience_level: user.experience_level || ""
+				experience_level:
+					(user.experience_level as ExperienceLevel) || "beginner"
 			});
 		}
 	}, [user]);
-
-	const handleImagePick = async () => {
-		if (!user) return;
-
-		try {
-			const { status } =
-				await ImagePicker.requestMediaLibraryPermissionsAsync();
-
-			if (status !== "granted") {
-				Alert.alert(
-					"Permission needed",
-					"Please grant permission to access your photos"
-				);
-				return;
-			}
-
-			const result = await ImagePicker.launchImageLibraryAsync({
-				mediaTypes: ImagePicker.MediaTypeOptions.Images,
-				allowsEditing: true,
-				aspect: [1, 1],
-				quality: 0.5,
-				base64: true
-			});
-
-			if (!result.canceled && result.assets[0].base64) {
-				await uploadProfileImage(result.assets[0].base64);
-			}
-		} catch (error) {
-			Alert.alert("Error", "Failed to pick image");
-		}
+	const handleExperienceChange = (level: ExperienceLevel) => {
+		setFormData((prev) => ({
+			...prev,
+			experience_level: level
+		}));
 	};
 
-	const uploadProfileImage = async (base64Image: string) => {
-		if (!user) return;
-
-		try {
-			setUploadingImage(true);
-
-			const filePath = `${user.id}/${Date.now()}.jpg`;
-			const { error: uploadError } = await supabase.storage
-				.from("profile-images")
-				.upload(filePath, decode(base64Image), {
-					contentType: "image/jpeg",
-					upsert: true
-				});
-
-			if (uploadError) throw uploadError;
-
-			const {
-				data: { publicUrl }
-			} = supabase.storage.from("profile-images").getPublicUrl(filePath);
-
-			await updateUser({ profile_image_url: publicUrl });
-		} catch (error) {
-			Alert.alert("Error", "Failed to upload image");
-		} finally {
-			setUploadingImage(false);
-		}
-	};
-
-	const handleUpdateProfile = async () => {
-		if (!user) return;
-
+	const handleSave = async () => {
 		try {
 			setLoading(true);
-
-			const updates: Partial<UserProfile> = {
-				username: formData.username,
+			await updateUser({
 				first_name: formData.first_name,
 				last_name: formData.last_name,
 				height: formData.height ? parseFloat(formData.height) : null,
 				weight: formData.weight ? parseFloat(formData.weight) : null,
+				date_of_birth: formData.date_of_birth.toString(),
 				goals: formData.goals,
-				experience_level:
-					formData.experience_level as UserProfile["experience_level"]
-			};
-
-			await updateUser(updates);
+				experience_level: formData.experience_level
+			});
 			setEditing(false);
 			Alert.alert("Success", "Profile updated successfully");
 		} catch (error) {
@@ -156,17 +86,13 @@ export default function ProfileScreen() {
 		}
 	};
 
-	if (!user) return null;
-
 	return (
 		<ScrollView style={styles.container}>
+			<LoadingOverlay visible={loading} />
+
 			<View style={styles.header}>
 				<View style={styles.profileImageContainer}>
-					{uploadingImage ? (
-						<View style={styles.profileImagePlaceholder}>
-							<ActivityIndicator color="#666" />
-						</View>
-					) : user.profile_image_url ? (
+					{user?.profile_image_url ? (
 						<Image
 							source={{ uri: user.profile_image_url }}
 							style={styles.profileImage}
@@ -176,39 +102,24 @@ export default function ProfileScreen() {
 							<User size={40} color="#666" />
 						</View>
 					)}
-					<TouchableOpacity
-						style={styles.cameraButton}
-						onPress={handleImagePick}
-						disabled={uploadingImage}
-					>
-						<Camera size={20} color="#fff" />
-					</TouchableOpacity>
 				</View>
-
 				<View style={styles.headerInfo}>
 					<Text style={styles.name}>
-						{user.first_name
+						{user?.first_name
 							? `${user.first_name} ${user.last_name || ""}`
-							: user.username}
+							: user?.username}
 					</Text>
-					<Text style={styles.email}>{user.email}</Text>
+					<Text style={styles.email}>{user?.email}</Text>
 				</View>
-
 				<TouchableOpacity
 					style={styles.editButton}
-					onPress={() => (editing ? handleUpdateProfile() : setEditing(true))}
+					onPress={() => (editing ? handleSave() : setEditing(true))}
 					disabled={loading}
 				>
-					{loading ? (
-						<ActivityIndicator color="#fff" />
+					{editing ? (
+						<Save size={20} color="#fff" />
 					) : (
-						<>
-							{editing ? (
-								<Text style={styles.editButtonText}>Save</Text>
-							) : (
-								<Edit2 size={20} color="#fff" />
-							)}
-						</>
+						<Edit2 size={20} color="#fff" />
 					)}
 				</TouchableOpacity>
 			</View>
@@ -217,126 +128,79 @@ export default function ProfileScreen() {
 				<View style={styles.section}>
 					<Text style={styles.sectionTitle}>Personal Information</Text>
 
-					<View style={styles.field}>
-						<Text style={styles.label}>Username</Text>
-						{editing ? (
-							<TextInput
-								style={styles.input}
-								value={formData.username}
-								onChangeText={(text) =>
-									setFormData((prev) => ({ ...prev, username: text }))
-								}
-								editable={!loading}
-								placeholder="Enter username"
-							/>
-						) : (
-							<Text style={styles.value}>{user.username}</Text>
-						)}
-					</View>
+					<FormInput
+						label="First Name (locked)" // Updated label
+						value={user?.first_name || ""}
+						editable={false}
+						containerStyle={styles.field}
+						required={false}
+						placeholder="Not provided"
+						style={styles.lockedField} // Add new style
+						leftIcon={<Lock size={16} color="#666" />} // Add lock icon
+					/>
 
-					<View style={styles.row}>
-						<View style={[styles.field, styles.halfWidth]}>
-							<Text style={styles.label}>First Name</Text>
-							{editing ? (
-								<TextInput
-									style={styles.input}
-									value={formData.first_name}
-									onChangeText={(text) =>
-										setFormData((prev) => ({ ...prev, first_name: text }))
-									}
-									editable={!loading}
-									placeholder="First name"
-								/>
-							) : (
-								<Text style={styles.value}>{user.first_name || "Not set"}</Text>
-							)}
-						</View>
+					<FormInput
+						label="Last Name (locked)" // Updated label
+						value={user?.last_name || ""}
+						editable={false}
+						containerStyle={styles.field}
+						required={false}
+						placeholder="Not provided"
+						style={styles.lockedField} // Add new style
+						leftIcon={<Lock size={16} color="#666" />} // Add lock icon
+					/>
 
-						<View style={[styles.field, styles.halfWidth]}>
-							<Text style={styles.label}>Last Name</Text>
-							{editing ? (
-								<TextInput
-									style={styles.input}
-									value={formData.last_name}
-									onChangeText={(text) =>
-										setFormData((prev) => ({ ...prev, last_name: text }))
-									}
-									editable={!loading}
-									placeholder="Last name"
-								/>
-							) : (
-								<Text style={styles.value}>{user.last_name || "Not set"}</Text>
-							)}
-						</View>
-					</View>
+					<FormInput
+						label="Height (cm)"
+						value={formData.height}
+						onChangeText={(text) =>
+							setFormData((prev) => ({ ...prev, height: text }))
+						}
+						editable={editing}
+						containerStyle={styles.field}
+						keyboardType="numeric"
+						required={false}
+						placeholder="Enter height"
+					/>
+
+					<FormInput
+						label="Weight (kg)"
+						value={formData.weight}
+						onChangeText={(text) =>
+							setFormData((prev) => ({ ...prev, weight: text }))
+						}
+						editable={editing}
+						containerStyle={styles.field}
+						keyboardType="numeric"
+						required={false}
+						placeholder="Enter weight"
+					/>
 				</View>
 
 				<View style={styles.section}>
 					<Text style={styles.sectionTitle}>Fitness Information</Text>
 
-					<View style={styles.row}>
-						<View style={[styles.field, styles.halfWidth]}>
-							<Text style={styles.label}>Height (cm)</Text>
-							{editing ? (
-								<TextInput
-									style={styles.input}
-									value={formData.height}
-									onChangeText={(text) =>
-										setFormData((prev) => ({ ...prev, height: text }))
-									}
-									keyboardType="numeric"
-									editable={!loading}
-									placeholder="Height"
-								/>
-							) : (
-								<Text style={styles.value}>{user.height || "Not set"}</Text>
-							)}
-						</View>
-
-						<View style={[styles.field, styles.halfWidth]}>
-							<Text style={styles.label}>Weight (kg)</Text>
-							{editing ? (
-								<TextInput
-									style={styles.input}
-									value={formData.weight}
-									onChangeText={(text) =>
-										setFormData((prev) => ({ ...prev, weight: text }))
-									}
-									keyboardType="numeric"
-									editable={!loading}
-									placeholder="Weight"
-								/>
-							) : (
-								<Text style={styles.value}>{user.weight || "Not set"}</Text>
-							)}
-						</View>
-					</View>
-
 					<View style={styles.field}>
 						<Text style={styles.label}>Experience Level</Text>
 						{editing ? (
-							<View style={styles.experiencePicker}>
+							<View style={styles.experienceContainer}>
 								{["beginner", "intermediate", "advanced"].map((level) => (
 									<TouchableOpacity
 										key={level}
 										style={[
-											styles.experienceOption,
+											styles.experienceButton,
 											formData.experience_level === level &&
-												styles.experienceOptionSelected
+												styles.experienceButtonActive
 										]}
 										onPress={() =>
-											setFormData((prev) => ({
-												...prev,
-												experience_level: level
-											}))
+											handleExperienceChange(level as ExperienceLevel)
 										}
-										disabled={loading}
 									>
 										<Text
 											style={[
-												styles.experienceOptionText,
+												styles.experienceButtonText,
 												formData.experience_level === level &&
-													styles.experienceOptionTextSelected
+													styles.experienceButtonTextActive
 											]}
 										>
 											{level.charAt(0).toUpperCase() + level.slice(1)}
@@ -346,32 +210,25 @@ export default function ProfileScreen() {
 							</View>
 						) : (
 							<Text style={styles.value}>
-								{user.experience_level
-									? user.experience_level.charAt(0).toUpperCase() +
-									  user.experience_level.slice(1)
-									: "Not set"}
+								{formData.experience_level?.charAt(0).toUpperCase() +
+									formData.experience_level?.slice(1) || "Not set"}
 							</Text>
 						)}
 					</View>
 
-					<View style={styles.field}>
-						<Text style={styles.label}>Goals</Text>
-						{editing ? (
-							<TextInput
-								style={[styles.input, styles.textArea]}
-								value={formData.goals}
-								onChangeText={(text) =>
-									setFormData((prev) => ({ ...prev, goals: text }))
-								}
-								multiline
-								numberOfLines={4}
-								editable={!loading}
-								placeholder="What are your fitness goals?"
-							/>
-						) : (
-							<Text style={styles.value}>{user.goals || "Not set"}</Text>
-						)}
-					</View>
+					<FormInput
+						label="Goals"
+						value={formData.goals}
+						onChangeText={(text) =>
+							setFormData((prev) => ({ ...prev, goals: text }))
+						}
+						editable={editing}
+						containerStyle={styles.field}
+						multiline
+						numberOfLines={4}
+						required={false}
+						placeholder="What are your fitness goals?"
+					/>
 				</View>
 
 				<TouchableOpacity
@@ -400,7 +257,6 @@ const styles = StyleSheet.create({
 		borderBottomColor: "#e0e0e0"
 	},
 	profileImageContainer: {
-		position: "relative",
 		marginRight: 16
 	},
 	profileImage: {
@@ -415,19 +271,6 @@ const styles = StyleSheet.create({
 		backgroundColor: "#f0f0f0",
 		justifyContent: "center",
 		alignItems: "center"
-	},
-	cameraButton: {
-		position: "absolute",
-		bottom: 0,
-		right: 0,
-		backgroundColor: "#000",
-		width: 32,
-		height: 32,
-		borderRadius: 16,
-		justifyContent: "center",
-		alignItems: "center",
-		borderWidth: 2,
-		borderColor: "#fff"
 	},
 	headerInfo: {
 		flex: 1
@@ -449,31 +292,19 @@ const styles = StyleSheet.create({
 		justifyContent: "center",
 		alignItems: "center"
 	},
-	editButtonText: {
-		color: "#fff",
-		fontSize: 14,
-		fontWeight: "600"
-	},
 	content: {
-		padding: 24
+		padding: 16
 	},
 	section: {
 		backgroundColor: "#fff",
 		borderRadius: 12,
 		padding: 16,
-		marginBottom: 24
+		marginBottom: 16
 	},
 	sectionTitle: {
 		fontSize: 18,
 		fontWeight: "600",
 		marginBottom: 16
-	},
-	row: {
-		flexDirection: "row",
-		gap: 12
-	},
-	halfWidth: {
-		flex: 1
 	},
 	field: {
 		marginBottom: 16
@@ -487,23 +318,11 @@ const styles = StyleSheet.create({
 		fontSize: 16,
 		color: "#000"
 	},
-	input: {
-		borderWidth: 1,
-		borderColor: "#ddd",
-		borderRadius: 8,
-		padding: 12,
-		fontSize: 16,
-		backgroundColor: "#fafafa"
-	},
-	textArea: {
-		height: 100,
-		textAlignVertical: "top"
-	},
-	experiencePicker: {
+	experienceContainer: {
 		flexDirection: "row",
 		gap: 8
 	},
-	experienceOption: {
+	experienceButton: {
 		flex: 1,
 		paddingVertical: 8,
 		paddingHorizontal: 12,
@@ -512,15 +331,15 @@ const styles = StyleSheet.create({
 		borderColor: "#ddd",
 		alignItems: "center"
 	},
-	experienceOptionSelected: {
+	experienceButtonActive: {
 		backgroundColor: "#000",
 		borderColor: "#000"
 	},
-	experienceOptionText: {
+	experienceButtonText: {
 		fontSize: 14,
 		color: "#000"
 	},
-	experienceOptionTextSelected: {
+	experienceButtonTextActive: {
 		color: "#fff"
 	},
 	signOutButton: {
@@ -536,5 +355,15 @@ const styles = StyleSheet.create({
 		color: "#FF3B30",
 		fontSize: 16,
 		fontWeight: "600"
+	},
+	lockedField: {
+		backgroundColor: "#f8f8f8",
+		borderStyle: "dashed",
+		borderColor: "#ccc",
+		color: "#666"
+	},
+	lockedLabel: {
+		color: "#666",
+		fontStyle: "italic"
 	}
 });

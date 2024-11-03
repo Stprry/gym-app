@@ -32,6 +32,7 @@ import {
 //Import components
 import { LoadingOverlay } from "./src/components/LoadingOverlay";
 import Toast from "react-native-toast-message";
+import { ErrorBoundary } from "@/components/ErrorBoundry";
 
 // Create navigators
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -132,9 +133,12 @@ function MainNavigator() {
 }
 
 // Root navigator with auth state handling
-
 function RootNavigator() {
-	const { user, loading } = useAuth();
+	const { user, loading, initialized } = useAuth();
+
+	if (!initialized) {
+		return null; // Or some loading indicator if you prefer
+	}
 
 	if (loading) {
 		return (
@@ -156,11 +160,13 @@ function RootNavigator() {
 // Main App component
 export default function App() {
 	return (
-		<AuthProvider>
-			<NavigationContainer>
-				<RootNavigator />
+		<ErrorBoundary>
+			<AuthProvider>
+				<NavigationContainer>
+					<RootNavigator />
+				</NavigationContainer>
 				<Toast />
-			</NavigationContainer>
-		</AuthProvider>
+			</AuthProvider>
+		</ErrorBoundary>
 	);
 }

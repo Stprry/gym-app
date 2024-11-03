@@ -28,19 +28,25 @@ const toastConfig = {
 	success: (props: BaseToastProps) => (
 		<BaseToast
 			{...props}
-			style={{ borderLeftColor: "#4CAF50", height: 80, paddingHorizontal: 20 }}
+			style={{
+				borderLeftColor: "#4CAF50",
+				minHeight: 80, // Changed from fixed height
+				width: "90%", // Added width
+				maxWidth: 350, // Added maxWidth
+				paddingHorizontal: 15
+			}}
+			contentContainerStyle={{
+				paddingHorizontal: 15
+			}}
 			text1Style={{
-				fontSize: 18,
-				fontWeight: "bold",
-				height: "auto",
-				width: "auto"
+				fontSize: 16,
+				fontWeight: "600"
 			}}
 			text2Style={{
-				fontSize: 16,
-				color: "#4CAF50",
-				height: "auto",
-				width: "auto"
+				fontSize: 14,
+				color: "#4CAF50"
 			}}
+			text2NumberOfLines={3} // Allow up to 3 lines for message
 		/>
 	),
 	error: (props: BaseToastProps) => (
@@ -48,25 +54,24 @@ const toastConfig = {
 			{...props}
 			style={{
 				borderLeftColor: "#FF5252",
-				height: 80,
-				paddingHorizontal: 20,
-				flex: 1,
-				flexDirection: "row",
-				justifyContent: "space-between",
-				alignItems: "center"
+				minHeight: 80, // Changed from fixed height
+				width: "90%", // Added width
+				maxWidth: 350, // Added maxWidth
+				paddingHorizontal: 15,
+				backgroundColor: "#fff"
+			}}
+			contentContainerStyle={{
+				paddingHorizontal: 15
 			}}
 			text1Style={{
-				fontSize: 18,
-				fontWeight: "bold",
-				height: "auto",
-				width: "auto"
+				fontSize: 16,
+				fontWeight: "600"
 			}}
 			text2Style={{
-				fontSize: 16,
-				color: "#FF5252",
-				height: "auto",
-				width: "auto"
+				fontSize: 14,
+				color: "#FF5252"
 			}}
+			text2NumberOfLines={3} // Allow up to 3 lines for message
 		/>
 	)
 };
@@ -116,11 +121,14 @@ export default function SignUpScreen({ navigation }: Props) {
 			type,
 			text1,
 			text2,
-			visibilityTime: 15000, // 15 seconds for readability
+			position: "bottom",
+			visibilityTime: 4000,
+			autoHide: true,
+			topOffset: 30,
+			bottomOffset: 40,
 			onHide: onHideCallback
 		});
 	};
-
 	const handleSignUp = async () => {
 		if (submitting) return;
 
@@ -143,7 +151,8 @@ export default function SignUpScreen({ navigation }: Props) {
 					data: {
 						username: formData.username,
 						first_name: formData.firstName,
-						last_name: formData.lastName
+						last_name: formData.lastName,
+						role: "client"
 					}
 				}
 			});
@@ -338,7 +347,12 @@ export default function SignUpScreen({ navigation }: Props) {
 					</View>
 				</View>
 			</ScrollView>
-			<Toast config={toastConfig} />
+			<Toast
+				config={toastConfig}
+				position="bottom"
+				bottomOffset={20}
+				visibilityTime={4000} // 4 seconds
+			/>
 		</KeyboardAvoidingView>
 	);
 }
