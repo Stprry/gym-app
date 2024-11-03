@@ -68,7 +68,7 @@ export default function HomeScreen({ navigation }: Props) {
 		setRefreshing(false);
 	}, [refetch]);
 
-	if (loading) {
+	if (loading && !refreshing) {
 		return <LoadingOverlay visible={true} message="Loading workouts..." />;
 	}
 
@@ -97,7 +97,7 @@ export default function HomeScreen({ navigation }: Props) {
 	if (error) {
 		return (
 			<View style={styles.centerContainer}>
-				<Text style={styles.errorText}>Error loading workouts</Text>
+				<Text style={styles.errorText}>{error}</Text>
 				<TouchableOpacity style={styles.retryButton} onPress={refetch}>
 					<Text style={styles.retryButtonText}>Retry</Text>
 				</TouchableOpacity>

@@ -18,109 +18,88 @@ import { AuthStackParamList } from "../types/navigation";
 import { supabase } from "../lib/supabase";
 import { LoadingOverlay } from "../components/LoadingOverlay";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
-import { usernameTaken, SupabaseErrorCode } from "../constants/errorCodes";
+import { SupabaseErrorCode } from "../constants/errorCodes";
 import { FormInput } from "../components/FormInput";
+import { DatePickerInput } from "../components/DatePickerInput";
 
 type Props = NativeStackScreenProps<AuthStackParamList, "SignUp">;
 
-// Define custom toast styles with proper typing for props
+interface SignUpFormData {
+	email: string;
+	password: string;
+	confirmPassword: string;
+	username: string;
+	first_name: string;
+	last_name: string;
+	date_of_birth: Date;
+	role: "client";
+}
+
 const toastConfig = {
 	success: (props: BaseToastProps) => (
 		<BaseToast
 			{...props}
-			style={{
-				borderLeftColor: "#4CAF50",
-				minHeight: 80, // Changed from fixed height
-				width: "90%", // Added width
-				maxWidth: 350, // Added maxWidth
-				paddingHorizontal: 15
-			}}
-			contentContainerStyle={{
-				paddingHorizontal: 15
-			}}
-			text1Style={{
-				fontSize: 16,
-				fontWeight: "600"
-			}}
-			text2Style={{
-				fontSize: 14,
-				color: "#4CAF50"
-			}}
-			text2NumberOfLines={3} // Allow up to 3 lines for message
+			style={styles.successToast}
+			contentContainerStyle={styles.toastContent}
+			text1Style={styles.toastTitle}
+			text2Style={styles.toastSuccessMessage}
+			text2NumberOfLines={3}
 		/>
 	),
 	error: (props: BaseToastProps) => (
 		<ErrorToast
 			{...props}
-			style={{
-				borderLeftColor: "#FF5252",
-				minHeight: 80, // Changed from fixed height
-				width: "90%", // Added width
-				maxWidth: 350, // Added maxWidth
-				paddingHorizontal: 15,
-				backgroundColor: "#fff"
-			}}
-			contentContainerStyle={{
-				paddingHorizontal: 15
-			}}
-			text1Style={{
-				fontSize: 16,
-				fontWeight: "600"
-			}}
-			text2Style={{
-				fontSize: 14,
-				color: "#FF5252"
-			}}
-			text2NumberOfLines={3} // Allow up to 3 lines for message
+			style={styles.errorToast}
+			contentContainerStyle={styles.toastContent}
+			text1Style={styles.toastTitle}
+			text2Style={styles.toastErrorMessage}
+			text2NumberOfLines={3}
 		/>
 	)
 };
 
 export default function SignUpScreen({ navigation }: Props) {
 	const [submitting, setSubmitting] = useState(false);
-	const [formData, setFormData] = useState({
+	const [formData, setFormData] = useState<SignUpFormData>({
 		email: "",
 		password: "",
 		confirmPassword: "",
 		username: "",
-		firstName: "",
-		lastName: ""
+		first_name: "",
+		last_name: "",
+		date_of_birth: new Date(),
+		role: "client"
 	});
 
 	const validateForm = (): string | null => {
 		if (!formData.email || !formData.password || !formData.username) {
 			return "Please fill in all required fields";
 		}
-
 		if (!formData.email.includes("@") || !formData.email.includes(".")) {
 			return "Please enter a valid email address";
 		}
-
 		if (formData.password.length < 6) {
 			return "Password must be at least 6 characters long";
 		}
-
 		if (formData.password !== formData.confirmPassword) {
 			return "Passwords do not match";
 		}
-
 		if (formData.username.length < 3) {
 			return "Username must be at least 3 characters long";
 		}
-
 		return null;
 	};
 
 	const showToast = (
 		type: "success" | "error",
-		text1: string,
-		text2?: string,
+		title: string,
+		message?: string,
 		onHideCallback?: () => void
 	) => {
 		Toast.show({
 			type,
-			text1,
-			text2,
+			text1: title,
+			text2: message,
 			position: "bottom",
 			visibilityTime: 4000,
 			autoHide: true,
@@ -129,6 +108,7 @@ export default function SignUpScreen({ navigation }: Props) {
 			onHide: onHideCallback
 		});
 	};
+
 	const handleSignUp = async () => {
 		if (submitting) return;
 
@@ -141,8 +121,9 @@ export default function SignUpScreen({ navigation }: Props) {
 		try {
 			setSubmitting(true);
 
+			// Sign up with Supabase Auth - this will trigger our database function
 			const {
-				data: { user: authUser },
+				data: { user },
 				error: signUpError
 			} = await supabase.auth.signUp({
 				email: formData.email.trim(),
@@ -150,79 +131,51 @@ export default function SignUpScreen({ navigation }: Props) {
 				options: {
 					data: {
 						username: formData.username,
-						first_name: formData.firstName,
-						last_name: formData.lastName,
-						role: "client"
+						first_name: formData.first_name,
+						last_name: formData.last_name,
+						role: formData.role,
+						date_of_birth: formData.date_of_birth.toISOString(),
+						height: null,
+						weight: null,
+						goals: null,
+						experience_level: null,
+						profile_image_url: null
 					}
 				}
 			});
 
 			if (signUpError) {
-				const errorCode = (signUpError as any).code as SupabaseErrorCode;
-				if (errorCode === "user_already_exists") {
+				// Handle specific error cases
+				if (signUpError.message?.includes("User already registered")) {
 					showToast(
 						"error",
 						"Account Exists",
-						ERROR_MESSAGES[errorCode],
-						() => {
-							navigation.navigate("SignIn", { email: formData.email.trim() });
-						}
+						"An account with this email already exists. Please sign in instead.",
+						() =>
+							navigation.navigate("SignIn", { email: formData.email.trim() })
 					);
 					return;
 				}
-				showToast(
-					"error",
-					"Sign Up Error",
-					ERROR_MESSAGES[errorCode] || ERROR_MESSAGES.default
-				);
-				return;
+
+				throw signUpError;
 			}
 
-			if (!authUser) {
+			if (!user) {
 				throw new Error("No user returned from sign up");
 			}
 
-			const { error: profileError } = await supabase.from("users").insert([
-				{
-					id: authUser.id,
-					email: formData.email.trim(),
-					username: formData.username,
-					first_name: formData.firstName,
-					last_name: formData.lastName,
-					role: "client",
-					is_active: true
-				}
-			]);
-
-			if (profileError) {
-				if (profileError.code === "23505") {
-					showToast(
-						"error",
-						"Username Taken",
-						"This username is already taken. Please choose another one."
-					);
-					return;
-				}
-				throw profileError;
-			}
-
-			// Show success toast and navigate to SignIn only after toast has been displayed
+			// Show success message and navigate
 			showToast(
 				"success",
-				"Success",
-				"Account created successfully! Please check your email to verify your account.",
-				() => {
-					navigation.navigate("SignIn", { email: formData.email.trim() });
-				}
+				"Account Created",
+				"Please check your email to verify your account.",
+				() => navigation.navigate("SignIn", { email: formData.email.trim() })
 			);
 		} catch (error) {
-			let errorMessage = ERROR_MESSAGES.default;
-			if (error instanceof Error) {
-				const errorResponse = (error as any).response?.data;
-				errorMessage =
-					errorResponse?.message || error.message || ERROR_MESSAGES.default;
-			}
-			showToast("error", "Error", errorMessage);
+			console.error("SignUp error:", error);
+			const errorMessage =
+				error instanceof Error ? error.message : ERROR_MESSAGES.default;
+			showToast("error", "Sign Up Error", errorMessage);
 		} finally {
 			setSubmitting(false);
 		}
@@ -259,6 +212,7 @@ export default function SignUpScreen({ navigation }: Props) {
 							}
 							editable={!submitting}
 						/>
+
 						<FormInput
 							label="Username"
 							required
@@ -274,26 +228,40 @@ export default function SignUpScreen({ navigation }: Props) {
 							}
 							editable={!submitting}
 						/>
+
 						<View style={styles.row}>
 							<FormInput
 								label="First Name"
 								containerStyle={styles.halfWidth}
-								value={formData.firstName}
+								value={formData.first_name}
 								onChangeText={(text) =>
-									setFormData((prev) => ({ ...prev, firstName: text }))
+									setFormData((prev) => ({ ...prev, first_name: text }))
 								}
 								editable={!submitting}
 							/>
 							<FormInput
 								label="Last Name"
 								containerStyle={styles.halfWidth}
-								value={formData.lastName}
+								value={formData.last_name}
 								onChangeText={(text) =>
-									setFormData((prev) => ({ ...prev, lastName: text }))
+									setFormData((prev) => ({ ...prev, last_name: text }))
 								}
 								editable={!submitting}
 							/>
 						</View>
+
+						<DatePickerInput
+							label="Date of Birth"
+							value={formData.date_of_birth}
+							onChange={(date) =>
+								setFormData((prev) => ({ ...prev, date_of_birth: date }))
+							}
+							required
+							editable={!submitting}
+							minDate={new Date(1900, 0, 1)}
+							maxDate={new Date()}
+						/>
+
 						<FormInput
 							label="Password"
 							required
@@ -310,6 +278,7 @@ export default function SignUpScreen({ navigation }: Props) {
 							}
 							editable={!submitting}
 						/>
+
 						<FormInput
 							label="Confirm Password"
 							required
@@ -327,6 +296,7 @@ export default function SignUpScreen({ navigation }: Props) {
 							}
 							editable={!submitting}
 						/>
+
 						<TouchableOpacity
 							style={[styles.button, submitting && styles.buttonDisabled]}
 							onPress={handleSignUp}
@@ -334,6 +304,7 @@ export default function SignUpScreen({ navigation }: Props) {
 						>
 							<Text style={styles.buttonText}>Create Account</Text>
 						</TouchableOpacity>
+
 						<TouchableOpacity
 							onPress={() => navigation.navigate("SignIn")}
 							style={styles.linkButton}
@@ -347,12 +318,7 @@ export default function SignUpScreen({ navigation }: Props) {
 					</View>
 				</View>
 			</ScrollView>
-			<Toast
-				config={toastConfig}
-				position="bottom"
-				bottomOffset={20}
-				visibilityTime={4000} // 4 seconds
-			/>
+			<Toast config={toastConfig} position="bottom" bottomOffset={20} />
 		</KeyboardAvoidingView>
 	);
 }
@@ -417,5 +383,35 @@ const styles = StyleSheet.create({
 	linkTextBold: {
 		fontWeight: "600",
 		color: "#000"
+	},
+	successToast: {
+		borderLeftColor: "#4CAF50",
+		minHeight: 80,
+		width: "90%",
+		maxWidth: 350,
+		paddingHorizontal: 15
+	},
+	errorToast: {
+		borderLeftColor: "#FF5252",
+		minHeight: 80,
+		width: "90%",
+		maxWidth: 350,
+		paddingHorizontal: 15,
+		backgroundColor: "#fff"
+	},
+	toastContent: {
+		paddingHorizontal: 15
+	},
+	toastTitle: {
+		fontSize: 16,
+		fontWeight: "600"
+	},
+	toastSuccessMessage: {
+		fontSize: 14,
+		color: "#4CAF50"
+	},
+	toastErrorMessage: {
+		fontSize: 14,
+		color: "#FF5252"
 	}
 });

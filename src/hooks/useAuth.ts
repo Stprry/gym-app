@@ -51,7 +51,11 @@ export function useAuth(): AuthContextType {
 				.single();
 
 			if (error) throw error;
+
+			// Update the local user state
 			setUser(data);
+
+			return data;
 		} catch (error) {
 			console.error("Error updating user:", error);
 			throw error;

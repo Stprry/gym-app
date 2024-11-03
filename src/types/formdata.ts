@@ -10,3 +10,13 @@ export interface ProfileFormData {
 	goals: string;
 	experience_level: ExperienceLevel;
 }
+
+export interface SignUpFormData {
+	email: string;
+	password: string;
+	confirmPassword: string;
+	username: string;
+	firstName: string;
+	lastName: string;
+	date_of_birth: Date;
+}

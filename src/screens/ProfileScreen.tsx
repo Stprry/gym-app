@@ -18,19 +18,21 @@ import { Image } from "react-native"; // Use React Native's Image component
 import { ProfileFormData, ExperienceLevel } from "../types/formdata";
 import { AuthContextType } from "../types/auth";
 import { FormInput } from "@/components/FormInput";
+import { Database } from "@/types/supabase";
+
+type Profile = Database["public"]["Tables"]["users"]["Row"];
 
 export default function ProfileScreen() {
 	const { user, updateUser, signOut } = useAuth();
 	const [editing, setEditing] = useState(false);
 	const [loading, setLoading] = useState(false);
-	const [formData, setFormData] = useState<ProfileFormData>({
+	const [formData, setFormData] = useState<Partial<Profile>>({
 		first_name: user?.first_name || "",
 		last_name: user?.last_name || "",
-		height: user?.height?.toString() || "",
-		weight: user?.weight?.toString() || "",
-		date_of_birth: user?.date_of_birth || new Date(),
+		height: user?.height || null,
+		weight: user?.weight || null,
 		goals: user?.goals || "",
-		experience_level: (user?.experience_level as ExperienceLevel) || "beginner"
+		experience_level: user?.experience_level || "beginner"
 	});
 
 	useEffect(() => {
@@ -38,16 +40,47 @@ export default function ProfileScreen() {
 			setFormData({
 				first_name: user.first_name || "",
 				last_name: user.last_name || "",
-				height: user.height?.toString() || "",
-				weight: user.weight?.toString() || "",
-				date_of_birth: user.date_of_birth || new Date(),
+				height: user.height ?? null,
+				weight: user.weight ?? null,
 				goals: user.goals || "",
-				experience_level:
-					(user.experience_level as ExperienceLevel) || "beginner"
+				experience_level: user.experience_level || "beginner"
+			});
+			setInputValues({
+				height: user.height?.toString() ?? "",
+				weight: user.weight?.toString() ?? ""
 			});
 		}
 	}, [user]);
-	const handleExperienceChange = (level: ExperienceLevel) => {
+
+	const [inputValues, setInputValues] = useState({
+		height: user?.height?.toString() ?? "",
+		weight: user?.weight?.toString() ?? ""
+	});
+
+	// Helper to format numeric values for display
+	const formatNumericValue = (value: number | null | undefined): string => {
+		if (value === null || value === undefined) return "";
+		return value.toString();
+	};
+
+	// Helper to validate and parse numeric input
+	const handleNumericChange = (field: "height" | "weight", value: string) => {
+		// Allow empty string, numbers, and one decimal point
+		// This regex allows typing numbers with decimals
+		if (value === "" || /^\d*\.?\d{0,2}$/.test(value)) {
+			setInputValues((prev) => ({
+				...prev,
+				[field]: value
+			}));
+
+			// Update formData with the numeric value
+			setFormData((prev) => ({
+				...prev,
+				[field]: value === "" ? null : parseFloat(value)
+			}));
+		}
+	};
+	const handleExperienceChange = (level: Profile["experience_level"]) => {
 		setFormData((prev) => ({
 			...prev,
 			experience_level: level
@@ -55,20 +88,23 @@ export default function ProfileScreen() {
 	};
 
 	const handleSave = async () => {
+		if (!user) return;
+
 		try {
 			setLoading(true);
-			await updateUser({
-				first_name: formData.first_name,
-				last_name: formData.last_name,
-				height: formData.height ? parseFloat(formData.height) : null,
-				weight: formData.weight ? parseFloat(formData.weight) : null,
-				date_of_birth: formData.date_of_birth.toString(),
-				goals: formData.goals,
-				experience_level: formData.experience_level
-			});
+
+			const updates: Partial<Profile> = {
+				height: inputValues.height ? parseFloat(inputValues.height) : null,
+				weight: inputValues.weight ? parseFloat(inputValues.weight) : null,
+				goals: formData.goals || null,
+				experience_level: formData.experience_level || null
+			};
+
+			await updateUser(updates);
 			setEditing(false);
 			Alert.alert("Success", "Profile updated successfully");
 		} catch (error) {
+			console.error("Profile update error:", error);
 			Alert.alert("Error", "Failed to update profile");
 		} finally {
 			setLoading(false);
@@ -84,6 +120,15 @@ export default function ProfileScreen() {
 		} finally {
 			setLoading(false);
 		}
+	};
+
+	const formatDateOfBirth = (date: string | null) => {
+		if (!date) return "Not provided";
+		return new Date(date).toLocaleDateString("en-GB", {
+			day: "numeric",
+			month: "long",
+			year: "numeric"
+		});
 	};
 
 	return (
@@ -129,56 +174,56 @@ export default function ProfileScreen() {
 					<Text style={styles.sectionTitle}>Personal Information</Text>
 
 					<FormInput
-						label="First Name (locked)" // Updated label
+						label="First Name"
 						value={user?.first_name || ""}
-						editable={false}
+						locked={true}
 						containerStyle={styles.field}
-						required={false}
 						placeholder="Not provided"
-						style={styles.lockedField} // Add new style
-						leftIcon={<Lock size={16} color="#666" />} // Add lock icon
 					/>
 
 					<FormInput
-						label="Last Name (locked)" // Updated label
+						label="Last Name"
 						value={user?.last_name || ""}
-						editable={false}
+						locked={true}
 						containerStyle={styles.field}
-						required={false}
 						placeholder="Not provided"
-						style={styles.lockedField} // Add new style
-						leftIcon={<Lock size={16} color="#666" />} // Add lock icon
+					/>
+
+					<FormInput
+						label="Email"
+						value={user?.email || ""}
+						locked={true}
+						containerStyle={styles.field}
+						placeholder="Not provided"
+					/>
+
+					<FormInput
+						label="Date of Birth"
+						value={formatDateOfBirth(user?.date_of_birth ?? null)}
+						locked={true}
+						containerStyle={styles.field}
+						placeholder="Not provided"
 					/>
 
 					<FormInput
 						label="Height (cm)"
-						value={formData.height}
-						onChangeText={(text) =>
-							setFormData((prev) => ({ ...prev, height: text }))
-						}
+						value={inputValues.height}
+						onChangeText={(text) => handleNumericChange("height", text)}
 						editable={editing}
 						containerStyle={styles.field}
-						keyboardType="numeric"
-						required={false}
-						placeholder="Enter height"
+						keyboardType="decimal-pad"
+						placeholder={editing ? "Enter height" : "Not provided"}
 					/>
 
 					<FormInput
 						label="Weight (kg)"
-						value={formData.weight}
-						onChangeText={(text) =>
-							setFormData((prev) => ({ ...prev, weight: text }))
-						}
+						value={inputValues.weight}
+						onChangeText={(text) => handleNumericChange("weight", text)}
 						editable={editing}
 						containerStyle={styles.field}
-						keyboardType="numeric"
-						required={false}
-						placeholder="Enter weight"
+						keyboardType="decimal-pad"
+						placeholder={editing ? "Enter weight" : "Not provided"}
 					/>
-				</View>
-
-				<View style={styles.section}>
-					<Text style={styles.sectionTitle}>Fitness Information</Text>
 
 					<View style={styles.field}>
 						<Text style={styles.label}>Experience Level</Text>
@@ -193,7 +238,9 @@ export default function ProfileScreen() {
 												styles.experienceButtonActive
 										]}
 										onPress={() =>
-											handleExperienceChange(level as ExperienceLevel)
+											handleExperienceChange(
+												level as Profile["experience_level"]
+											)
 										}
 									>
 										<Text
@@ -210,15 +257,17 @@ export default function ProfileScreen() {
 							</View>
 						) : (
 							<Text style={styles.value}>
-								{formData.experience_level?.charAt(0).toUpperCase() +
-									formData.experience_level?.slice(1) || "Not set"}
+								{formData.experience_level
+									? formData.experience_level.charAt(0).toUpperCase() +
+									  formData.experience_level.slice(1)
+									: "Not set"}
 							</Text>
 						)}
 					</View>
 
 					<FormInput
 						label="Goals"
-						value={formData.goals}
+						value={formData.goals || ""}
 						onChangeText={(text) =>
 							setFormData((prev) => ({ ...prev, goals: text }))
 						}
@@ -226,19 +275,31 @@ export default function ProfileScreen() {
 						containerStyle={styles.field}
 						multiline
 						numberOfLines={4}
-						required={false}
-						placeholder="What are your fitness goals?"
+						placeholder={
+							editing ? "What are your fitness goals?" : "Not provided"
+						}
 					/>
 				</View>
 
-				<TouchableOpacity
-					style={styles.signOutButton}
-					onPress={handleSignOut}
-					disabled={loading}
-				>
-					<LogOut size={20} color="#FF3B30" />
-					<Text style={styles.signOutText}>Sign Out</Text>
-				</TouchableOpacity>
+				{editing ? (
+					<TouchableOpacity
+						style={styles.saveButton}
+						onPress={handleSave}
+						disabled={loading}
+					>
+						<Save size={20} color="#fff" />
+						<Text style={styles.saveButtonText}>Save Changes</Text>
+					</TouchableOpacity>
+				) : (
+					<TouchableOpacity
+						style={styles.signOutButton}
+						onPress={handleSignOut}
+						disabled={loading}
+					>
+						<LogOut size={20} color="#FF3B30" />
+						<Text style={styles.signOutText}>Sign Out</Text>
+					</TouchableOpacity>
+				)}
 			</View>
 		</ScrollView>
 	);
@@ -365,5 +426,21 @@ const styles = StyleSheet.create({
 	lockedLabel: {
 		color: "#666",
 		fontStyle: "italic"
+	},
+	saveButton: {
+		backgroundColor: "#000",
+		flexDirection: "row",
+		alignItems: "center",
+		justifyContent: "center",
+		padding: 16,
+		borderRadius: 12,
+		marginTop: 16,
+		marginHorizontal: 16,
+		gap: 8
+	},
+	saveButtonText: {
+		color: "#fff",
+		fontSize: 16,
+		fontWeight: "600"
 	}
 });
