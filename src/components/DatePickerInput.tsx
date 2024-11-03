@@ -6,7 +6,8 @@ import {
 	StyleSheet,
 	View,
 	Text,
-	Modal
+	Modal,
+	SafeAreaView
 } from "react-native";
 import DateTimePicker, {
 	DateTimePickerEvent
@@ -23,6 +24,7 @@ interface DatePickerInputProps {
 	error?: string;
 	minDate?: Date;
 	maxDate?: Date;
+	onPress?: () => void;
 }
 
 const MONTHS = [
@@ -53,12 +55,14 @@ export const DatePickerInput: React.FC<DatePickerInputProps> = ({
 	editable = true,
 	error,
 	minDate = new Date(1900, 0, 1),
-	maxDate = new Date()
+	maxDate = new Date(),
+	onPress
 }) => {
 	const [showPicker, setShowPicker] = useState(false);
 	const [selectedDate, setSelectedDate] = useState(value);
 	const [currentMonth, setCurrentMonth] = useState(value.getMonth());
 	const [currentYear, setCurrentYear] = useState(value.getFullYear());
+	const [tempDate, setTempDate] = useState(value); // For iOS temp state
 
 	const getDaysInMonth = (month: number, year: number) => {
 		return new Date(year, month + 1, 0).getDate();
@@ -74,6 +78,43 @@ export const DatePickerInput: React.FC<DatePickerInputProps> = ({
 			setSelectedDate(newDate);
 			onChange(newDate);
 			setShowPicker(false);
+		}
+	};
+
+	const handlePress = () => {
+		if (editable) {
+			if (onPress) {
+				onPress();
+			}
+			setTempDate(selectedDate);
+			setShowPicker(true);
+		}
+	};
+
+	// iOS specific handlers
+	const handleIOSConfirm = () => {
+		setSelectedDate(tempDate);
+		onChange(tempDate);
+		setShowPicker(false);
+	};
+
+	const handleIOSCancel = () => {
+		setTempDate(selectedDate);
+		setShowPicker(false);
+	};
+
+	// Handle date change based on platform
+	const handleDateChange = (event: DateTimePickerEvent, date?: Date) => {
+		if (Platform.OS === "android") {
+			setShowPicker(false);
+			if (event.type === "set" && date) {
+				setSelectedDate(date);
+				onChange(date);
+			}
+		} else if (Platform.OS === "ios") {
+			if (date) {
+				setTempDate(date);
+			}
 		}
 	};
 
@@ -236,48 +277,105 @@ export const DatePickerInput: React.FC<DatePickerInputProps> = ({
 
 	// Native platform code
 	return (
-		<>
+		<View style={styles.container}>
 			<TouchableOpacity
-				onPress={() => editable && setShowPicker(true)}
-				style={styles.container}
+				onPress={handlePress}
+				disabled={!editable}
+				style={styles.touchableContainer}
 			>
 				<FormInput
 					label={label}
-					value={value.toLocaleDateString()}
+					value={selectedDate.toLocaleDateString()}
 					editable={false}
 					required={required}
 					error={error}
 					placeholder="Select date"
+					leftIcon={<Calendar size={20} color={editable ? "#666" : "#999"} />}
+					containerStyle={{
+						...(editable ? {} : styles.disabledInput),
+						...styles.inputContainer,
+						width: "100%"
+					}}
 				/>
 			</TouchableOpacity>
 
-			{showPicker && (
-				<DateTimePicker
-					testID="dateTimePicker"
-					value={value}
-					mode="date"
-					display={Platform.OS === "ios" ? "spinner" : "default"}
-					onChange={(event: DateTimePickerEvent, selectedDate?: Date) => {
-						if (Platform.OS === "android") {
-							setShowPicker(false);
-						}
-						if (selectedDate && event.type !== "dismissed") {
-							onChange(selectedDate);
-						}
-					}}
-					maximumDate={maxDate}
-					minimumDate={minDate}
-				/>
-			)}
-		</>
+			{showPicker &&
+				editable &&
+				(Platform.OS === "ios" ? (
+					<Modal
+						transparent
+						visible={showPicker}
+						animationType="slide"
+						presentationStyle="overFullScreen"
+					>
+						<SafeAreaView style={styles.iosModalOverlay}>
+							<View style={styles.iosModalContent}>
+								<View style={styles.iosHeader}>
+									<TouchableOpacity
+										onPress={handleIOSCancel}
+										style={styles.iosButton}
+									>
+										<Text style={styles.iosButtonText}>Cancel</Text>
+									</TouchableOpacity>
+									<TouchableOpacity
+										onPress={handleIOSConfirm}
+										style={styles.iosButton}
+									>
+										<Text style={[styles.iosButtonText, styles.iosDoneButton]}>
+											Done
+										</Text>
+									</TouchableOpacity>
+								</View>
+								{/* Wrap DateTimePicker in a View with white background */}
+								<View style={styles.datePickerContainer}>
+									<DateTimePicker
+										value={tempDate}
+										mode="date"
+										display="spinner"
+										onChange={handleDateChange}
+										maximumDate={maxDate}
+										minimumDate={minDate}
+										textColor="black" // Add this
+										themeVariant="light" // Add this
+										style={styles.datePicker} // Add this
+									/>
+								</View>
+							</View>
+						</SafeAreaView>
+					</Modal>
+				) : (
+					<DateTimePicker
+						value={selectedDate}
+						mode="date"
+						display="default"
+						onChange={handleDateChange}
+						maximumDate={maxDate}
+						minimumDate={minDate}
+					/>
+				))}
+		</View>
 	);
 };
 
 const styles = StyleSheet.create({
-	webContainer: {
+	// Common styles
+	container: {
 		width: "100%"
 	},
+	touchableContainer: {
+		width: "100%",
+		position: "relative"
+	},
 	inputContainer: {
+		pointerEvents: "none" as const,
+		width: "100%"
+	},
+	disabledInput: {
+		opacity: 0.7
+	},
+
+	// Web Calendar styles
+	webContainer: {
 		width: "100%"
 	},
 	modalOverlay: {
@@ -296,6 +394,8 @@ const styles = StyleSheet.create({
 	calendarContent: {
 		width: "100%"
 	},
+
+	// Calendar Header styles
 	calendarHeader: {
 		marginBottom: 16
 	},
@@ -315,6 +415,8 @@ const styles = StyleSheet.create({
 		borderColor: "#ddd",
 		backgroundColor: "#fff"
 	},
+
+	// Calendar Grid styles
 	weekDayHeader: {
 		flexDirection: "row",
 		justifyContent: "space-between",
@@ -357,7 +459,47 @@ const styles = StyleSheet.create({
 	disabledDayText: {
 		color: "#999"
 	},
-	container: {
+
+	// iOS Modal styles
+	iosModalOverlay: {
+		flex: 1,
+		justifyContent: "flex-end",
+		backgroundColor: "rgba(0, 0, 0, 0.5)"
+	},
+	iosModalContent: {
+		backgroundColor: "#fff",
+		borderTopLeftRadius: 20,
+		borderTopRightRadius: 20,
+		padding: 16,
+		paddingBottom: Platform.OS === "ios" ? 40 : 20
+	},
+	iosHeader: {
+		flexDirection: "row",
+		justifyContent: "space-between",
+		alignItems: "center",
+		marginBottom: 8,
+		borderBottomWidth: 1,
+		borderBottomColor: "#e0e0e0",
+		paddingBottom: 8
+	},
+	iosButton: {
+		padding: 8
+	},
+	iosButtonText: {
+		fontSize: 16,
+		color: "#007AFF",
+		paddingHorizontal: 8
+	},
+	iosDoneButton: {
+		fontWeight: "600"
+	},
+	datePickerContainer: {
+		backgroundColor: "#fff",
+		padding: 16,
+		alignItems: "center"
+	},
+	datePicker: {
+		height: 200,
 		width: "100%"
 	}
 });
